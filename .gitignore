@@ -1,0 +1,18 @@
+# Data files
+data/*.bin
+data/*.npy
+data/input.txt
+
+# Model checkpoints
+*.pth
+model_ultra_best.pth
+
+# Python environment and cache
+__pycache__/
+.env
+.venv/
+Pipfile.lock
+
+# Tokenizer/Vocab
+vocab_ultra.json
+vocab.json
