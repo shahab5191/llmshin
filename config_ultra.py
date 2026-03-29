@@ -17,15 +17,16 @@ n_head = 12
 n_kv_heads = 4  # Grouped-Query Attention ratio (3 Queries per 1 K/V)
 n_layer = 12
 dropout = 0.1
-vocab_size = 1000  # target sub-word vocab size for BPE
+vocab_size = 8192  # Optimal for 100M parameter model
+
 
 if torch.cuda.is_available():
-    device = 'cuda'
+    device = "cuda"
 elif torch.backends.mps.is_available():
-    device = 'mps'
+    device = "mps"
 else:
-    device = 'cpu'
+    device = "cpu"
 
 # Optimization for RTX 3060 (Ampere)
-if device == 'cuda':
-    torch.set_float32_matmul_precision('high')  # Enables Tensor Cores
+if device == "cuda":
+    torch.set_float32_matmul_precision("high")  # Enables Tensor Cores

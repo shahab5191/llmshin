@@ -64,7 +64,6 @@ class GroupedQueryAttention(nn.Module):
         self.wv = nn.Linear(n_embd, n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(n_head * self.head_dim, n_embd, bias=False)
 
-        self.attn_dropout = nn.Dropout(dropout)
         self.resid_dropout = nn.Dropout(dropout)
 
     def forward(self, x, freqs_cis):
@@ -91,9 +90,7 @@ class GroupedQueryAttention(nn.Module):
 
         # Efficient Flash Attention (requires PyTorch 2.0+)
         output = F.scaled_dot_product_attention(
-            xq, xk, xv,
-            is_causal=True,
-            dropout_p=dropout if self.training else 0.0
+            xq, xk, xv, is_causal=True, dropout_p=dropout if self.training else 0.0
         )
 
         output = output.transpose(1, 2).reshape(B, T, C)
@@ -105,7 +102,10 @@ class SwiGLUMLP(nn.Module):
 
     def __init__(self, dim):
         super().__init__()
-        hidden_dim = int(2 / 3 * 4 * dim)  # Standard Llama MLP scaling
+        hidden_dim = int(2 / 3 * 4 * dim)
+        # Round hidden_dim to nearest multiple of 256 for hardware alignment
+        hidden_dim = ((hidden_dim + 255) // 256) * 256
+
         self.w1 = nn.Linear(dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
@@ -137,8 +137,13 @@ class UltraGPT(nn.Module):
         self.norm = RMSNorm(n_embd)
         self.output = nn.Linear(n_embd, vocab_size, bias=False)
 
+        # Weight Tying: tie output layer weights to token embeddings
+        self.output.weight = self.token_embedding.weight
+
         # RoPE frequencies precomputation registered as buffer
-        self.register_buffer("freqs_cis", precompute_rope_freqs(n_embd // n_head, block_size * 2))
+        self.register_buffer(
+            "freqs_cis", precompute_rope_freqs(n_embd // n_head, block_size * 2)
+        )
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
@@ -161,11 +166,21 @@ class UltraGPT(nn.Module):
         return logits, loss
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+        """
+        Generate text with temperature and top-k sampling.
+        """
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -block_size:]
             logits, _ = self(idx_cond)
-            logits = logits[:, -1, :]
+            # focus only on the last time step and scale by temperature
+            logits = logits[:, -1, :] / temperature
+
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float("Inf")
+
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
