@@ -1,3 +1,4 @@
+import os
 import torch
 from model_ultra import UltraGPT
 from tokenizer import BPETokenizer
@@ -14,8 +15,15 @@ vocab_size = tokenizer.vocab_size
 model = UltraGPT(vocab_size)
 
 # Load the model weights safely
-# We use weights_only=True for security and compatibility
-state_dict = torch.load("model_ultra.pth", map_location=device, weights_only=True)
+# During training, we usually want to check the 'best' checkpoint
+model_path = 'model_ultra_best.pth' if os.path.exists('model_ultra_best.pth') else 'model_ultra.pth'
+print(f"Loading weights from {model_path}...")
+
+state_dict = torch.load(model_path, map_location=device, weights_only=True)
+# If loading from a full checkpoint (which contains 'model', 'optimizer', etc.)
+if 'model' in state_dict:
+    state_dict = state_dict['model']
+
 model.load_state_dict(state_dict)
 
 model.to(device)
